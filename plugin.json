@@ -1,0 +1,9 @@
+{
+    "name": "Skyport Ereignis-Filter Flow",
+    "namespace": "SkyportEreignisFilterFlow",
+    "type": "general",
+    "version": "0.1.0",
+    "description": "Flow-Filter für PlentyONE Flow: Prüfung von ContactReceiverId sowie Billing-/Delivery-AddressId gegen ID-Listen.",
+    "author": "Skyport GmbH (Alexander Schieder)",
+    "serviceProvider": "SkyportEreignisFilterFlow\\Providers\\SkyportEreignisFilterFlowServiceProvider"
+}

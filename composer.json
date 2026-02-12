@@ -1,0 +1,12 @@
+{
+    "name": "skyport/skyport-ereignis-filter-flow",
+    "description": "Flow-Filter für PlentyONE Flow: Prüfung von ContactReceiverId sowie Billing-/Delivery-AddressId gegen ID-Listen.",
+    "type": "library",
+    "license": "proprietary",
+    "autoload": {
+        "psr-4": {
+            "SkyportEreignisFilterFlow\\": "src/"
+        }
+    },
+    "require": {}
+}
