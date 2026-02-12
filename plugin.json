@@ -1,5 +1,5 @@
 {
-    "name": "Skyport Ereignis-Filter Flow",
+    "name": "SkyportEreignisFilterFlow",
     "namespace": "SkyportEreignisFilterFlow",
     "type": "general",
     "version": "0.1.0",
