@@ -25,9 +25,38 @@ class SkyportIdListFilter extends FilterDefinitionContract
         return 'Prüft ContactReceiverId oder Billing-/Delivery-AddressId gegen eine ID-Liste (Komma/Zeilenumbruch).';
     }
 
+    public function shouldBeRegistered(): bool
+    {
+        return true;
+    }
+
+    public function isSystemSpecific(): bool
+    {
+        return false;
+    }
+
+    public function getCondition(): bool
+    {
+        return true;
+    }
+
+    public function getRequiredInputTypes(): array
+    {
+        return ['order'];
+    }
+
+    public function getAvailabilities(): array
+    {
+        return ['order'];
+    }
+
+    public function getOperators(): array
+    {
+        return ['in'];
+    }
+
     public function getUIConfigFields(): array
     {
-        // Typ (Kontakt / Billing / Delivery)
         $type = pluginApp(SelectboxField::class);
         $type->name = 'type';
         $type->caption = 'Typ';
@@ -38,7 +67,6 @@ class SkyportIdListFilter extends FilterDefinitionContract
             $this->sbv('delivery', 'ID der Lieferadresse'),
         ];
 
-        // Modus (allow / deny)
         $mode = pluginApp(SelectboxField::class);
         $mode->name = 'mode';
         $mode->caption = 'Modus';
@@ -48,13 +76,11 @@ class SkyportIdListFilter extends FilterDefinitionContract
             $this->sbv('deny', 'Nicht zulassen (Treffer = false)'),
         ];
 
-        // IDs (Textarea)
         $ids = pluginApp(TextAreaField::class);
         $ids->name = 'ids';
-        $ids->caption = 'IDs (Komma oder Zeile – gemischt möglich)';
+        $ids->caption = 'IDs (Komma oder Zeilenumbrüche – gemischt möglich)';
         $ids->value = '';
 
-        // Optional: Hinweis/Zweck
         $hint = pluginApp(InputField::class);
         $hint->name = 'hint';
         $hint->caption = 'Hinweis / Zweck (optional)';
@@ -66,34 +92,6 @@ class SkyportIdListFilter extends FilterDefinitionContract
             $ids->toArray(),
             $hint->toArray(),
         ];
-    }
-
-    public function getRequiredInputTypes(): array
-    {
-        // In vielen Plenty-Installationen ist das einfach "order".
-        // (Der Filter soll in Order-Flows verfügbar sein.)
-        return ['order'];
-    }
-
-    public function getOperators(): array
-    {
-        // Wir steuern Logik über "mode" + IDs, Operatoren brauchen wir nicht.
-        // (Falls deine Flow-UI zwingend Operatoren verlangt, sag Bescheid,
-        // dann liefern wir hier z.B. ["in"] zurück und werten $filterField["operator"] aus.)
-        return [];
-    }
-
-    public function getAvailabilities(): array
-    {
-        // Wenn deine Plenty-Version hier etwas Spezifisches erwartet,
-        // passt du das später an (z.B. nur Order-Flows).
-        return [];
-    }
-
-    public function getCondition(): bool
-    {
-        // true = ist ein Condition-Filter
-        return true;
     }
 
     public function performFilter($inputs, $filterField, $extraParams = []): bool
@@ -132,8 +130,6 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
         $inList = in_array($value, $ids, true);
 
-        // allow: true wenn Treffer
-        // deny : true wenn NICHT Treffer
         if ($mode === 'deny') {
             return !$inList;
         }
@@ -141,7 +137,7 @@ class SkyportIdListFilter extends FilterDefinitionContract
         return $inList;
     }
 
-    private function sbv(string $value, string $caption)
+    private function sbv(string $value, string $caption): array
     {
         $o = pluginApp(SelectboxValue::class);
         $o->value = $value;
@@ -152,12 +148,10 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
     private function extractOrder($inputs)
     {
-        // typisch: $inputs['order']
         if (is_array($inputs) && isset($inputs['order'])) {
             return $inputs['order'];
         }
 
-        // fallback: falls nur 1 Element übergeben wird
         if (is_array($inputs)) {
             foreach ($inputs as $v) {
                 if (is_object($v)) {
@@ -171,10 +165,6 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
     private function getConfigValue($filterField, string $key, string $default): string
     {
-        // je nach Flow-Version liegen Config-Felder unterschiedlich:
-        // - $filterField['configFields'][$key]
-        // - $filterField['config'][$key]
-        // - $filterField[$key]
         if (is_array($filterField)) {
             if (isset($filterField['configFields']) && is_array($filterField['configFields']) && isset($filterField['configFields'][$key])) {
                 return (string)$filterField['configFields'][$key];
@@ -194,11 +184,9 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
     private function parseIds(string $input): array
     {
-        // Komma + Zeilenumbrüche gemischt
         $input = str_replace(["\r\n", "\r", "\n"], ",", $input);
 
         $out = [];
-
         foreach (explode(",", $input) as $part) {
             $part = trim($part);
             if ($part === '') {
@@ -211,7 +199,7 @@ class SkyportIdListFilter extends FilterDefinitionContract
             }
         }
 
-        // unique ohne array_unique (nur um ganz sicher zu sein)
+        // unique ohne array_unique
         $unique = [];
         $seen = [];
         foreach ($out as $id) {
