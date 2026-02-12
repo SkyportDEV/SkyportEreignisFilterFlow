@@ -10,7 +10,8 @@ class SkyportEreignisFilterFlowServiceProvider extends ServiceProvider
 {
     public function boot(FilterDefinitionContainer $filterDefinitionContainer): void
     {
-        // Register Flow filter definition (configured directly inside PlentyONE Flow)
-        $filterDefinitionContainer->register(pluginApp(SkyportIdListFilter::class));
+        // Wichtig: In vielen Plenty-Versionen ist das die stabilste Form:
+        // => Klasse registrieren, nicht pluginApp() Instanz
+        $filterDefinitionContainer->register(SkyportIdListFilter::class);
     }
 }
