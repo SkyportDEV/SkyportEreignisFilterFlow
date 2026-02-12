@@ -10,6 +10,6 @@ class SkyportEreignisFilterFlowServiceProvider extends ServiceProvider
 {
     public function boot(FilterDefinitionContainer $filterDefinitionContainer): void
     {
-        $filterDefinitionContainer->register(SkyportIdListFilter::class);
+        $filterDefinitionContainer->register(pluginApp(SkyportIdListFilter::class));
     }
 }
