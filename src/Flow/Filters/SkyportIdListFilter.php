@@ -6,7 +6,6 @@ use Plenty\Modules\Flow\Filters\Definitions\Contracts\FilterDefinitionContract;
 use Plenty\Modules\Flow\DataModels\ConfigForm\SelectboxField;
 use Plenty\Modules\Flow\DataModels\ConfigForm\SelectboxValue;
 use Plenty\Modules\Flow\DataModels\ConfigForm\TextAreaField;
-use Plenty\Modules\Flow\DataModels\ConfigForm\InputField;
 
 class SkyportIdListFilter extends FilterDefinitionContract
 {
@@ -17,42 +16,12 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
     public function getName(): string
     {
-        return 'Skyport: ID-Liste (Kontakt / Adressen)';
+        return 'Kontakt/Adressen: ID-Liste (Skyport)';
     }
 
     public function getDescription(): string
     {
         return 'Prüft ContactReceiverId oder Billing-/Delivery-AddressId gegen eine ID-Liste (Komma/Zeilenumbruch).';
-    }
-
-    public function shouldBeRegistered(): bool
-    {
-        return true;
-    }
-
-    public function isSystemSpecific(): bool
-    {
-        return false;
-    }
-
-    public function getCondition(): bool
-    {
-        return true;
-    }
-
-    public function getRequiredInputTypes(): array
-    {
-        return ['order'];
-    }
-
-    public function getAvailabilities(): array
-    {
-        return ['order'];
-    }
-
-    public function getOperators(): array
-    {
-        return ['in'];
     }
 
     public function getUIConfigFields(): array
@@ -72,26 +41,55 @@ class SkyportIdListFilter extends FilterDefinitionContract
         $mode->caption = 'Modus';
         $mode->value = 'allow';
         $mode->selectBoxValues = [
-            $this->sbv('allow', 'Zulassen (Treffer = true)'),
-            $this->sbv('deny', 'Nicht zulassen (Treffer = false)'),
+            $this->sbv('allow', 'Zulassen (Treffer = wahr)'),
+            $this->sbv('deny', 'Nicht zulassen (Treffer = falsch)'),
         ];
 
         $ids = pluginApp(TextAreaField::class);
         $ids->name = 'ids';
-        $ids->caption = 'IDs (Komma oder Zeilenumbrüche – gemischt möglich)';
+        $ids->caption = 'IDs (Komma oder Zeile – gemischt möglich)';
         $ids->value = '';
-
-        $hint = pluginApp(InputField::class);
-        $hint->name = 'hint';
-        $hint->caption = 'Hinweis / Zweck (optional)';
-        $hint->value = '';
 
         return [
             $type->toArray(),
             $mode->toArray(),
             $ids->toArray(),
-            $hint->toArray(),
         ];
+    }
+
+    public function getRequiredInputTypes(): array
+    {
+        return ['order'];
+    }
+
+    public function getOperators(): array
+    {
+        return [];
+    }
+
+    public function getAvailabilities(): array
+    {
+        return ['order'];
+    }
+
+    public function getCondition(): bool
+    {
+        return true;
+    }
+
+    public function isSystemSpecific(): bool
+    {
+        return false;
+    }
+
+    public function shouldBeRegistered(): bool
+    {
+        return true;
+    }
+
+    public function searchCriteria($field = []): string
+    {
+        return $this->getName() . ' ' . $this->getDescription();
     }
 
     public function performFilter($inputs, $filterField, $extraParams = []): bool
@@ -115,13 +113,15 @@ class SkyportIdListFilter extends FilterDefinitionContract
         if ($type === 'contact') {
             $value = isset($order->contactReceiverId) ? (int)$order->contactReceiverId : 0;
         } elseif ($type === 'billing') {
-            $value = (isset($order->billingAddress) && isset($order->billingAddress->id))
-                ? (int)$order->billingAddress->id
-                : 0;
+            // laut Model/Guide: $order->billingAddress->id
+            if (isset($order->billingAddress) && isset($order->billingAddress->id)) {
+                $value = (int)$order->billingAddress->id;
+            }
         } elseif ($type === 'delivery') {
-            $value = (isset($order->deliveryAddress) && isset($order->deliveryAddress->id))
-                ? (int)$order->deliveryAddress->id
-                : 0;
+            // laut Model/Guide: $order->deliveryAddress->id
+            if (isset($order->deliveryAddress) && isset($order->deliveryAddress->id)) {
+                $value = (int)$order->deliveryAddress->id;
+            }
         }
 
         if ($value <= 0) {
@@ -154,7 +154,7 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
         if (is_array($inputs)) {
             foreach ($inputs as $v) {
-                if (is_object($v)) {
+                if (is_object($v) && isset($v->id)) {
                     return $v;
                 }
             }
@@ -199,7 +199,6 @@ class SkyportIdListFilter extends FilterDefinitionContract
             }
         }
 
-        // unique ohne array_unique
         $unique = [];
         $seen = [];
         foreach ($out as $id) {
