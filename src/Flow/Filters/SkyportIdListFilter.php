@@ -9,6 +9,16 @@ use Plenty\Modules\Flow\DataModels\ConfigForm\TextAreaField;
 
 class SkyportIdListFilter extends FilterDefinitionContract
 {
+    public function shouldBeRegistered(): bool
+    {
+        return true;
+    }
+
+    public function isSystemSpecific(): bool
+    {
+        return false;
+    }
+
     public function getIdentifier(): string
     {
         return 'skyport_id_list_filter';
@@ -16,12 +26,14 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
     public function getName(): string
     {
-        return 'Kontakt/Adressen: ID-Liste (Skyport)';
+        // Der Name sollte Suchbegriffe enthalten (Kontakt/Adresse/ID),
+        // damit man ihn im Flow-Filter-Dropdown schnell findet.
+        return 'Skyport: Kontakt/Adresse – ID Liste';
     }
 
     public function getDescription(): string
     {
-        return 'Prüft ContactReceiverId oder Billing-/Delivery-AddressId gegen eine ID-Liste (Komma/Zeilenumbruch).';
+        return 'Prüft ContactReceiverId oder Billing-/Delivery-AddressId gegen eine ID-Liste (Komma/Zeilenumbrüche).';
     }
 
     public function getUIConfigFields(): array
@@ -41,8 +53,8 @@ class SkyportIdListFilter extends FilterDefinitionContract
         $mode->caption = 'Modus';
         $mode->value = 'allow';
         $mode->selectBoxValues = [
-            $this->sbv('allow', 'Zulassen (Treffer = wahr)'),
-            $this->sbv('deny', 'Nicht zulassen (Treffer = falsch)'),
+            $this->sbv('allow', 'Zulassen (Treffer = true)'),
+            $this->sbv('deny', 'Nicht zulassen (Treffer = false)'),
         ];
 
         $ids = pluginApp(TextAreaField::class);
@@ -59,37 +71,25 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
     public function getRequiredInputTypes(): array
     {
+        // Damit der Filter in Order-Flows verfügbar ist
         return ['order'];
     }
 
     public function getOperators(): array
     {
+        // Wir steuern die Logik über "mode", Operatoren brauchen wir nicht.
         return [];
     }
 
     public function getAvailabilities(): array
     {
-        return ['order'];
+        // Leer lassen, damit Plenty selbst entscheidet
+        return [];
     }
 
     public function getCondition(): bool
     {
         return true;
-    }
-
-    public function isSystemSpecific(): bool
-    {
-        return false;
-    }
-
-    public function shouldBeRegistered(): bool
-    {
-        return true;
-    }
-
-    public function searchCriteria($field = []): string
-    {
-        return $this->getName() . ' ' . $this->getDescription();
     }
 
     public function performFilter($inputs, $filterField, $extraParams = []): bool
@@ -113,15 +113,17 @@ class SkyportIdListFilter extends FilterDefinitionContract
         if ($type === 'contact') {
             $value = isset($order->contactReceiverId) ? (int)$order->contactReceiverId : 0;
         } elseif ($type === 'billing') {
-            // laut Model/Guide: $order->billingAddress->id
-            if (isset($order->billingAddress) && isset($order->billingAddress->id)) {
-                $value = (int)$order->billingAddress->id;
-            }
+            // laut Order-Model Guide: $order->billingAddress->id
+            $value = (isset($order->billingAddress) && isset($order->billingAddress->id))
+                ? (int)$order->billingAddress->id
+                : 0;
         } elseif ($type === 'delivery') {
-            // laut Model/Guide: $order->deliveryAddress->id
-            if (isset($order->deliveryAddress) && isset($order->deliveryAddress->id)) {
-                $value = (int)$order->deliveryAddress->id;
-            }
+            // laut Order-Model Guide: $order->deliveryAddress->id
+            $value = (isset($order->deliveryAddress) && isset($order->deliveryAddress->id))
+                ? (int)$order->deliveryAddress->id
+                : 0;
+        } else {
+            return false;
         }
 
         if ($value <= 0) {
@@ -130,11 +132,38 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
         $inList = in_array($value, $ids, true);
 
+        // allow: true wenn Treffer
+        // deny : true wenn NICHT Treffer
         if ($mode === 'deny') {
             return !$inList;
         }
 
         return $inList;
+    }
+
+    public function searchCriteria($field = []): string
+    {
+        return 'Skyport Kontakt Adresse ID Liste Contact Billing Delivery Rechnungsadresse Lieferadresse Empfänger';
+    }
+
+    public function searchCriteriaValue($value, $operator = ''): void
+    {
+        // Kann leer bleiben – Plenty ruft das intern beim Suchen auf.
+    }
+
+    public function mapFilterFields($filterField): void
+    {
+        // Kann leer bleiben
+    }
+
+    public function validateConfigFields($configFields): void
+    {
+        // optional: könnte man später validieren (z.B. IDs Pflicht)
+    }
+
+    public function validateInputs($inputs): void
+    {
+        // optional
     }
 
     private function sbv(string $value, string $caption): array
@@ -154,7 +183,7 @@ class SkyportIdListFilter extends FilterDefinitionContract
 
         if (is_array($inputs)) {
             foreach ($inputs as $v) {
-                if (is_object($v) && isset($v->id)) {
+                if (is_object($v)) {
                     return $v;
                 }
             }
