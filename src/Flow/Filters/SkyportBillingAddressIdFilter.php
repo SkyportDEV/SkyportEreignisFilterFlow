@@ -36,7 +36,8 @@ class SkyportBillingAddressIdFilter extends PluginFlowFilterDefinition
     public function getOperators(): array
     {
         return [
-            FilterOperators::EQUAL
+            FilterOperators::EQUAL,
+            FilterOperators::NOT_EQUAL
         ];
     }
 
@@ -124,6 +125,12 @@ class SkyportBillingAddressIdFilter extends PluginFlowFilterDefinition
         if ($operator === FilterOperators::EQUAL) {
             return $addressId === $configuredId;
         }
+        
+        if ($operator === FilterOperators::NOT_EQUAL) {
+            return $addressId !== $configuredId;
+        }
+        
+        return false;
 
         return false;
     }
