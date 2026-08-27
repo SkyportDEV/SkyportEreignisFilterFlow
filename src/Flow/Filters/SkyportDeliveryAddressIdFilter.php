@@ -3,8 +3,7 @@
 namespace SkyportEreignisFilterFlow\Flow\Filters;
 
 use Plenty\Modules\Flow\Contracts\UIConfigFormContract;
-use Plenty\Modules\Flow\DataModels\ConfigForm\CheckboxGroupField;
-use Plenty\Modules\Flow\DataModels\ConfigForm\TextAreaField;
+use Plenty\Modules\Flow\DataModels\ConfigForm\NumberField;
 use Plenty\Modules\Flow\Enums\FilterOperators;
 use Plenty\Modules\Flow\Filters\Definitions\Models\Plugin\PluginFlowFilterDefinition;
 use Plenty\Modules\Order\Contracts\OrderRepositoryContract;
@@ -12,8 +11,7 @@ use Plenty\Modules\Order\Contracts\OrderRepositoryContract;
 class SkyportDeliveryAddressIdFilter extends PluginFlowFilterDefinition
 {
     const IDENTIFIER = 'SkyportEreignisFilterFlow::deliveryAddressId';
-    const KEY_OPERATOR = 'deliveryAddressIdOperator';
-    const KEY_IDS = 'deliveryAddressIds';
+    const KEY = 'deliveryAddressId';
 
     public function getIdentifier(): string
     {
@@ -38,9 +36,7 @@ class SkyportDeliveryAddressIdFilter extends PluginFlowFilterDefinition
     public function getOperators(): array
     {
         return [
-            FilterOperators::EQUAL,
-            FilterOperators::IN,
-            FilterOperators::NOT_IN
+            FilterOperators::EQUAL
         ];
     }
 
@@ -56,47 +52,21 @@ class SkyportDeliveryAddressIdFilter extends PluginFlowFilterDefinition
 
         $configForm = $this->addOperators(
             $configForm,
-            self::KEY_OPERATOR
+            self::KEY
         );
 
-        /** @var CheckboxGroupField $operatorValueField */
-        $operatorValueField = $this->getFormField(
-            CheckboxGroupField::class,
+        /** @var NumberField $addressIdField */
+        $addressIdField = $this->getFormField(
+            NumberField::class,
             [
-                'name' => self::KEY_OPERATOR,
-                'label' => ''
+                'name' => self::KEY,
+                'label' => 'Lieferadresse-ID'
             ]
         );
 
-        $operatorValueField->addCheckBoxValue(
-            '',
-            'dummy',
-            false
-        );
-
-        $operatorValueField->isVisible = false;
-        $operatorValueField->isRequired = false;
-
-        $configForm->addCheckboxGroupField(
-            $operatorValueField,
-            self::KEY_OPERATOR
-        );
-
-        /** @var TextAreaField $idsField */
-        $idsField = $this->getFormField(
-            TextAreaField::class,
-            [
-                'name' => self::KEY_IDS,
-                'label' => 'Lieferadress-IDs'
-            ]
-        );
-
-        $idsField->helperText = 'Eine ID pro Zeile oder durch Komma getrennt. Bei "Ist gleich" genau eine ID eingeben.';
-        $idsField->isRequired = true;
-
-        $configForm->addTextAreaField(
-            $idsField,
-            self::KEY_IDS
+        $configForm->addNumberField(
+            $addressIdField,
+            self::KEY
         );
 
         return $configForm->getConfigFields();
@@ -126,112 +96,35 @@ class SkyportDeliveryAddressIdFilter extends PluginFlowFilterDefinition
 
         $order = $orderRepository->findById($orderId);
 
-        if (!$order) {
-            return false;
-        }
-
         if (
+            !$order ||
             !isset($order->deliveryAddress) ||
             !isset($order->deliveryAddress->id)
         ) {
             return false;
         }
 
+        if (
+            !isset($filterField[self::KEY]) ||
+            !isset($filterField[self::KEY]['operator']) ||
+            !isset($filterField[self::KEY]['value'])
+        ) {
+            return false;
+        }
+
         $addressId = (int)$order->deliveryAddress->id;
-
-        if ($addressId <= 0) {
-            return false;
-        }
-
-        if (
-            !isset($filterField[self::KEY_OPERATOR]) ||
-            !isset($filterField[self::KEY_OPERATOR]['operator'])
-        ) {
-            return false;
-        }
-
-        $operator = $filterField[self::KEY_OPERATOR]['operator'];
-
-        if (
-            !isset($filterField[self::KEY_IDS]) ||
-            !isset($filterField[self::KEY_IDS]['value'])
-        ) {
-            return false;
-        }
-
-        $idsRaw = (string)$filterField[self::KEY_IDS]['value'];
-        $ids = $this->parseIds($idsRaw);
-
-        if (count($ids) === 0) {
-            return false;
-        }
+        $configuredId = (int)$filterField[self::KEY]['value'];
+        $operator = $filterField[self::KEY]['operator'];
 
         $this->captureGiven(
-            self::KEY_IDS,
+            self::KEY,
             $addressId
         );
 
         if ($operator === FilterOperators::EQUAL) {
-            if (count($ids) !== 1) {
-                return false;
-            }
-
-            return $addressId === $ids[0];
-        }
-
-        if ($operator === FilterOperators::IN) {
-            return in_array(
-                $addressId,
-                $ids,
-                true
-            );
-        }
-
-        if ($operator === FilterOperators::NOT_IN) {
-            return !in_array(
-                $addressId,
-                $ids,
-                true
-            );
+            return $addressId === $configuredId;
         }
 
         return false;
-    }
-
-    private function parseIds(string $input): array
-    {
-        $input = str_replace(
-            [
-                "\r\n",
-                "\r",
-                "\n"
-            ],
-            ',',
-            $input
-        );
-
-        $ids = [];
-        $seen = [];
-
-        foreach (explode(',', $input) as $part) {
-            $part = trim($part);
-
-            if ($part === '') {
-                continue;
-            }
-
-            $id = (int)$part;
-
-            if ($id <= 0) {
-                continue;
-            }
-
-            if (!isset($seen[$id])) {
-                $seen[$id] = true;
-                $ids[] = $id;
-            }
-        }
-
-        return $ids;
     }
 }
