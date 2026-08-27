@@ -120,9 +120,7 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
             ]
         );
 
-        $idsField->helperText = [
-            'Eine ID pro Zeile oder durch Komma getrennt. Beide Varianten können gemischt werden.'
-        ];
+        $idsField->helperText = 'Eine ID pro Zeile oder durch Komma getrennt. Beide Varianten können gemischt werden.';
 
         $configForm->addTextAreaField(
             $idsField,
