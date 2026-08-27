@@ -5,14 +5,15 @@ namespace SkyportEreignisFilterFlow\Flow\Filters;
 use Plenty\Modules\Flow\Contracts\UIConfigFormContract;
 use Plenty\Modules\Flow\DataModels\ConfigForm\SelectboxField;
 use Plenty\Modules\Flow\DataModels\ConfigForm\TextAreaField;
-use Plenty\Modules\Flow\Enums\FilterOperators;
 use Plenty\Modules\Flow\Filters\Definitions\Models\Plugin\PluginFlowFilterDefinition;
 use Plenty\Modules\Order\Contracts\OrderRepositoryContract;
 
 class SkyportIdListFilter extends PluginFlowFilterDefinition
 {
     const IDENTIFIER = 'SkyportEreignisFilterFlow::orderIdList';
+
     const KEY_TYPE = 'idType';
+    const KEY_MODE = 'mode';
     const KEY_IDS = 'ids';
 
     public function getIdentifier(): string
@@ -32,15 +33,18 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
 
     public function getAIDescription(): string
     {
-        return 'Filter orders by receiver contact ID, billing address ID or delivery address ID.';
+        return 'Filters orders by receiver contact ID, billing address ID or delivery address ID.';
     }
 
     public function getOperators(): array
     {
-        return [
-            FilterOperators::IN,
-            FilterOperators::NOT_IN
-        ];
+        /*
+         * Keine Plenty-Operatoren.
+         *
+         * Zulassen / Nicht zulassen wird über ein eigenes
+         * Konfigurationsfeld gesteuert.
+         */
+        return [];
     }
 
     public function getUIConfigFields(): array
@@ -54,18 +58,7 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
         );
 
         /*
-         * Plenty fügt damit den Operator für KEY_IDS hinzu:
-         *
-         * IN     = Zulassen
-         * NOT_IN = Nicht zulassen
-         */
-        $configForm = $this->addOperators(
-            $configForm,
-            self::KEY_IDS
-        );
-
-        /*
-         * Typ der zu prüfenden ID
+         * Typ
          */
         /** @var SelectboxField $typeField */
         $typeField = $this->getFormField(
@@ -100,16 +93,36 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
         );
 
         /*
-         * ID-Liste
-         *
-         * Erlaubt:
-         * 123
-         * 456
-         *
-         * oder:
-         * 123,456
-         *
-         * oder gemischt.
+         * Modus
+         */
+        /** @var SelectboxField $modeField */
+        $modeField = $this->getFormField(
+            SelectboxField::class,
+            [
+                'name' => self::KEY_MODE,
+                'label' => 'Modus'
+            ]
+        );
+
+        $modeField->addSelectboxValue(
+            'Zulassen',
+            'allow',
+            false
+        );
+
+        $modeField->addSelectboxValue(
+            'Nicht zulassen',
+            'deny',
+            false
+        );
+
+        $configForm->addSelectboxField(
+            $modeField,
+            self::KEY_MODE
+        );
+
+        /*
+         * IDs
          */
         /** @var TextAreaField $idsField */
         $idsField = $this->getFormField(
@@ -136,26 +149,12 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
         array $extraParams = []
     ): bool {
         /*
-         * Wichtig:
-         * Flow liefert hier nicht das Order-Modell direkt.
-         *
-         * mapFilterFields() erzeugt:
-         *
-         * [
-         *     'ids' => [
-         *         'operator' => ...,
-         *         'value' => ...
-         *     ],
-         *     ...
-         * ]
+         * Konfigurationsfelder normalisieren.
          */
         $filterField = $this->mapFilterFields($filterField);
 
         /*
-         * Order-ID aus dem Flow-Input holen.
-         *
-         * Genau dieses Muster verwendet auch das offizielle
-         * Plenty-Beispiel.
+         * Flow liefert die Order-ID als Input.
          */
         if (!isset($inputs[$this->getObjectType()])) {
             return false;
@@ -179,20 +178,21 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
         }
 
         /*
-         * Konfiguration auslesen
+         * Konfiguration prüfen.
          */
         if (
             !isset($filterField[self::KEY_TYPE]) ||
             !isset($filterField[self::KEY_TYPE]['value']) ||
+            !isset($filterField[self::KEY_MODE]) ||
+            !isset($filterField[self::KEY_MODE]['value']) ||
             !isset($filterField[self::KEY_IDS]) ||
-            !isset($filterField[self::KEY_IDS]['operator']) ||
             !isset($filterField[self::KEY_IDS]['value'])
         ) {
             return false;
         }
 
         $type = (string)$filterField[self::KEY_TYPE]['value'];
-        $operator = $filterField[self::KEY_IDS]['operator'];
+        $mode = (string)$filterField[self::KEY_MODE]['value'];
         $idsRaw = (string)$filterField[self::KEY_IDS]['value'];
 
         $ids = $this->parseIds($idsRaw);
@@ -202,7 +202,7 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
         }
 
         /*
-         * Tatsächliche ID des Auftrags ermitteln
+         * Zu prüfende ID ermitteln.
          */
         $value = 0;
 
@@ -227,12 +227,12 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
                 $value = (int)$order->deliveryAddress->id;
             }
         }
+        else {
+            return false;
+        }
 
         /*
-         * Tatsächlichen Wert für den FlowTracker erfassen.
-         *
-         * Damit sollte später im Tracker sichtbar sein,
-         * welche ID Plenty tatsächlich geprüft hat.
+         * Im FlowTracker den tatsächlich gefundenen Wert anzeigen.
          */
         $this->captureGiven(
             self::KEY_IDS,
@@ -249,21 +249,17 @@ class SkyportIdListFilter extends PluginFlowFilterDefinition
             true
         );
 
-        if ($operator === FilterOperators::IN) {
-            return $inList;
-        }
-
-        if ($operator === FilterOperators::NOT_IN) {
+        if ($mode === 'deny') {
             return !$inList;
         }
 
-        return false;
+        return $inList;
     }
 
     private function parseIds(string $input): array
     {
         /*
-         * Windows / Unix / Mac Zeilenumbrüche zu Komma
+         * Zeilenumbrüche und Kommas werden gleich behandelt.
          */
         $input = str_replace(
             [
