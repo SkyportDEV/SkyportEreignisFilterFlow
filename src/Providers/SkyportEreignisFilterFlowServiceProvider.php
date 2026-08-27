@@ -3,13 +3,19 @@
 namespace SkyportEreignisFilterFlow\Providers;
 
 use Plenty\Plugin\ServiceProvider;
-use Plenty\Modules\Flow\Filters\Definitions\Containers\FilterDefinitionContainer;
-use SkyportEreignisFilterFlow\Flow\Filters\SkyportAlwaysTrueFilter;
+use Plenty\Modules\Flow\Services\PluginFlowRegistrationService;
+use SkyportEreignisFilterFlow\Flow\Filters\SkyportIdListFilter;
 
 class SkyportEreignisFilterFlowServiceProvider extends ServiceProvider
 {
-    public function boot(FilterDefinitionContainer $container): void
+    public function boot(): void
     {
-        $container->register(pluginApp(SkyportAlwaysTrueFilter::class));
+        $pluginFlowRegistrationService = pluginApp(
+            PluginFlowRegistrationService::class
+        );
+
+        $pluginFlowRegistrationService->registerFilter(
+            pluginApp(SkyportIdListFilter::class)
+        );
     }
 }
