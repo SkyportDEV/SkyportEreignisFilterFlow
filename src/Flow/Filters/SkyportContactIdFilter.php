@@ -2,9 +2,10 @@
 
 namespace SkyportEreignisFilterFlow\Flow\Filters;
 
+use Plenty\Modules\Account\Contact\Contracts\ContactRepositoryContract;
 use Plenty\Modules\Flow\Contracts\UIConfigFormContract;
 use Plenty\Modules\Flow\DataModels\ConfigForm\CheckboxGroupField;
-use Plenty\Modules\Flow\DataModels\ConfigForm\TextAreaField;
+use Plenty\Modules\Flow\DataModels\ConfigForm\SelectboxField;
 use Plenty\Modules\Flow\Enums\FilterOperators;
 use Plenty\Modules\Flow\Filters\Definitions\Models\Plugin\PluginFlowFilterDefinition;
 use Plenty\Modules\Order\Contracts\OrderRepositoryContract;
@@ -12,19 +13,7 @@ use Plenty\Modules\Order\Contracts\OrderRepositoryContract;
 class SkyportContactIdFilter extends PluginFlowFilterDefinition
 {
     const IDENTIFIER = 'SkyportEreignisFilterFlow::contactId';
-
-    /*
-     * An diesem technischen Feld hängt der Plenty-Operator.
-     *
-     * Das Feld selbst ist unsichtbar. Es existiert nur, weil Plenty
-     * insbesondere für IN / NOT_IN ein Feld mit "options" erwartet.
-     */
-    const KEY_OPERATOR = 'contactIdOperator';
-
-    /*
-     * Hier werden die eigentlichen Kontakt-IDs eingegeben.
-     */
-    const KEY_IDS = 'contactIds';
+    const KEY = 'contactId';
 
     public function getIdentifier(): string
     {
@@ -43,7 +32,7 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
 
     public function getAIDescription(): string
     {
-        return 'Filters orders by receiver contact ID.';
+        return 'Filters orders by receiver contact ID. Supports a single contact or multiple contacts.';
     }
 
     public function getOperators(): array
@@ -66,86 +55,118 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
         );
 
         /*
-         * Plenty-Operator hinzufügen:
-         *
-         * =       Ist gleich
-         * IN      Ist in
-         * NOT_IN  Ist nicht in
+         * Operator an denselben KEY binden wie die Wertefelder.
          */
         $configForm = $this->addOperators(
             $configForm,
-            self::KEY_OPERATOR
+            self::KEY
         );
 
         /*
-         * Technisches Wertefeld für Plenty.
-         *
-         * IN / NOT_IN erwarten intern ein Feld mit "options".
-         * Deshalb verwenden wir ein CheckboxGroupField mit einer
-         * Dummy-Option. Das Feld bleibt unsichtbar und wird von
-         * unserer Filterlogik nicht ausgewertet.
+         * Einzelwert für EQUAL.
          */
-        /** @var CheckboxGroupField $operatorValueField */
-        $operatorValueField = $this->getFormField(
+        /** @var SelectboxField $contactSelectBox */
+        $contactSelectBox = $this->getFormField(
+            SelectboxField::class,
+            [
+                'name' => self::KEY,
+                'label' => 'Kontakt'
+            ]
+        );
+
+        /*
+         * Mehrfachauswahl für IN / NOT_IN.
+         */
+        /** @var CheckboxGroupField $contactCheckBoxGroup */
+        $contactCheckBoxGroup = $this->getFormField(
             CheckboxGroupField::class,
             [
-                'name' => self::KEY_OPERATOR,
-                'label' => ''
+                'name' => self::KEY,
+                'label' => 'Kontakte'
             ]
         );
 
-        $operatorValueField->addCheckBoxValue(
-            '',
-            'dummy',
-            false
+        /*
+         * Wie im offiziellen Plenty-Beispiel:
+         *
+         * Selectbox nur bei Einzeloperatoren.
+         * CheckboxGroup nur bei IN / NOT_IN.
+         *
+         * Plenty verwendet intern für NOT_IN den Operatorwert "NIN".
+         */
+        $contactSelectBox->condition = 'operator != "IN" && operator != "NIN"';
+        $contactSelectBox->conditionKeys = ['operator'];
+
+        $contactCheckBoxGroup->condition = 'operator == "IN" || operator == "NIN"';
+        $contactCheckBoxGroup->conditionKeys = ['operator'];
+
+        /*
+         * Kontakte aus diesem Plenty-System laden.
+         */
+        /** @var ContactRepositoryContract $contactRepository */
+        $contactRepository = pluginApp(
+            ContactRepositoryContract::class
         );
 
-        $operatorValueField->isVisible = false;
-        $operatorValueField->isRequired = false;
+        $page = 1;
+        $itemsPerPage = 250;
+
+        do {
+            $contacts = $contactRepository->getContactList(
+                [],
+                [],
+                [
+                    'id',
+                    'firstName',
+                    'lastName',
+                    'fullName',
+                    'email'
+                ],
+                $page,
+                $itemsPerPage,
+                'id',
+                'asc'
+            );
+
+            foreach ($contacts->getResult() as $contact) {
+                $contactId = isset($contact->id)
+                    ? (int)$contact->id
+                    : 0;
+
+                if ($contactId <= 0) {
+                    continue;
+                }
+
+                $label = $this->buildContactLabel($contact);
+
+                $contactSelectBox->addSelectboxValue(
+                    $label,
+                    $contactId,
+                    false
+                );
+
+                $contactCheckBoxGroup->addCheckBoxValue(
+                    $label,
+                    $contactId,
+                    false
+                );
+            }
+
+            $page++;
+        } while (!$contacts->isLastPage());
+
+        /*
+         * Beide Felder unter demselben KEY registrieren.
+         * Flow blendet je nach Operator das passende Feld ein.
+         */
+        $configForm->addSelectboxField(
+            $contactSelectBox,
+            self::KEY
+        );
 
         $configForm->addCheckboxGroupField(
-            $operatorValueField,
-            self::KEY_OPERATOR
-        );
-
-        /*
-         * Eigentliche Kontakt-ID-Eingabe.
-         *
-         * Beispiele:
-         *
-         * 311828
-         *
-         * oder:
-         *
-         * 311828
-         * 123456
-         * 789012
-         *
-         * oder:
-         *
-         * 311828,123456,789012
-         *
-         * Auch gemischt möglich.
-         */
-        /** @var TextAreaField $idsField */
-        $idsField = $this->getFormField(
-            TextAreaField::class,
-            [
-                'name' => self::KEY_IDS,
-                'label' => 'Kontakt-IDs'
-            ]
-        );
-
-        /*
-         * In deiner Plenty-Version ist helperText ein STRING.
-         * Kein Array verwenden!
-         */
-        $idsField->helperText = 'Eine ID pro Zeile oder durch Komma getrennt. Bei "Ist gleich" genau eine ID eingeben.';
-        $idsField->isRequired = true;
-
-        $configForm->addTextAreaField(
-            $idsField,
-            self::KEY_IDS
+            $contactCheckBoxGroup,
+            self::KEY
         );
 
         return $configForm->getConfigFields();
@@ -156,14 +177,8 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
         array $filterField,
         array $extraParams = []
     ): bool {
-        /*
-         * Plenty-Filterfelder normalisieren.
-         */
         $filterField = $this->mapFilterFields($filterField);
 
-        /*
-         * Flow liefert uns die Order-ID.
-         */
         if (!isset($inputs[$this->getObjectType()])) {
             return false;
         }
@@ -174,9 +189,6 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
             return false;
         }
 
-        /*
-         * Auftrag vollständig laden.
-         */
         /** @var OrderRepositoryContract $orderRepository */
         $orderRepository = pluginApp(
             OrderRepositoryContract::class
@@ -184,14 +196,10 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
 
         $order = $orderRepository->findById($orderId);
 
-        if (!$order) {
-            return false;
-        }
-
-        /*
-         * Kontakt-ID des Empfängers.
-         */
-        if (!isset($order->contactReceiverId)) {
+        if (
+            !$order ||
+            !isset($order->contactReceiverId)
+        ) {
             return false;
         }
 
@@ -201,123 +209,84 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
             return false;
         }
 
-        /*
-         * Operator ermitteln.
-         */
         if (
-            !isset($filterField[self::KEY_OPERATOR]) ||
-            !isset($filterField[self::KEY_OPERATOR]['operator'])
+            !isset($filterField[self::KEY]) ||
+            !isset($filterField[self::KEY]['operator']) ||
+            !isset($filterField[self::KEY]['value'])
         ) {
             return false;
         }
 
-        $operator = $filterField[self::KEY_OPERATOR]['operator'];
+        $operator = $filterField[self::KEY]['operator'];
+        $configuredValue = $filterField[self::KEY]['value'];
 
-        /*
-         * ID-Liste aus der Textarea holen.
-         */
-        if (
-            !isset($filterField[self::KEY_IDS]) ||
-            !isset($filterField[self::KEY_IDS]['value'])
-        ) {
-            return false;
+        if ($operator === FilterOperators::EQUAL) {
+            $result = $contactId === (int)$configuredValue;
         }
-
-        $idsRaw = (string)$filterField[self::KEY_IDS]['value'];
-
-        $ids = $this->parseIds($idsRaw);
-
-        if (count($ids) === 0) {
-            return false;
+        elseif ($operator === FilterOperators::IN) {
+            $result = is_array($configuredValue)
+                && in_array($contactId, $configuredValue, true);
+        }
+        elseif ($operator === FilterOperators::NOT_IN) {
+            $result = is_array($configuredValue)
+                && !in_array($contactId, $configuredValue, true);
+        }
+        else {
+            $result = false;
         }
 
         /*
-         * Im FlowTracker anzeigen, welche Kontakt-ID der
-         * aktuelle Auftrag tatsächlich hat.
+         * Im FlowTracker sichtbar machen,
+         * welche Contact-ID der Auftrag tatsächlich hatte.
          */
         $this->captureGiven(
-            self::KEY_IDS,
+            self::KEY,
             $contactId
         );
 
-        /*
-         * IST GLEICH
-         *
-         * Für "=" muss genau eine ID konfiguriert sein.
-         */
-        if ($operator === FilterOperators::EQUAL) {
-            if (count($ids) !== 1) {
-                return false;
-            }
-
-            return $contactId === $ids[0];
-        }
-
-        /*
-         * IST IN
-         */
-        if ($operator === FilterOperators::IN) {
-            return in_array(
-                $contactId,
-                $ids,
-                true
-            );
-        }
-
-        /*
-         * IST NICHT IN
-         */
-        if ($operator === FilterOperators::NOT_IN) {
-            return !in_array(
-                $contactId,
-                $ids,
-                true
-            );
-        }
-
-        return false;
+        return $result;
     }
 
-    private function parseIds(string $input): array
+    private function buildContactLabel($contact): string
     {
-        /*
-         * Windows / Unix / Mac Zeilenumbrüche vereinheitlichen.
-         */
-        $input = str_replace(
-            [
-                "\r\n",
-                "\r",
-                "\n"
-            ],
-            ',',
-            $input
-        );
+        $id = isset($contact->id)
+            ? (int)$contact->id
+            : 0;
 
-        $ids = [];
-        $seen = [];
+        $name = '';
 
-        foreach (explode(',', $input) as $part) {
-            $part = trim($part);
+        if (
+            isset($contact->fullName) &&
+            trim((string)$contact->fullName) !== ''
+        ) {
+            $name = trim((string)$contact->fullName);
+        }
+        else {
+            $firstName = isset($contact->firstName)
+                ? trim((string)$contact->firstName)
+                : '';
 
-            if ($part === '') {
-                continue;
-            }
+            $lastName = isset($contact->lastName)
+                ? trim((string)$contact->lastName)
+                : '';
 
-            $id = (int)$part;
-
-            if ($id <= 0) {
-                continue;
-            }
-
-            /*
-             * Duplikate vermeiden.
-             */
-            if (!isset($seen[$id])) {
-                $seen[$id] = true;
-                $ids[] = $id;
-            }
+            $name = trim($firstName . ' ' . $lastName);
         }
 
-        return $ids;
+        $email = isset($contact->email)
+            ? trim((string)$contact->email)
+            : '';
+
+        $label = (string)$id;
+
+        if ($name !== '') {
+            $label .= ' - ' . $name;
+        }
+
+        if ($email !== '') {
+            $label .= ' - ' . $email;
+        }
+
+        return $label;
     }
 }
