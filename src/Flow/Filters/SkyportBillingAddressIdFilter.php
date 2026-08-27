@@ -9,11 +9,11 @@ use Plenty\Modules\Flow\Enums\FilterOperators;
 use Plenty\Modules\Flow\Filters\Definitions\Models\Plugin\PluginFlowFilterDefinition;
 use Plenty\Modules\Order\Contracts\OrderRepositoryContract;
 
-class SkyportDeliveryAddressIdFilter extends PluginFlowFilterDefinition
+class SkyportBillingAddressIdFilter extends PluginFlowFilterDefinition
 {
-    const IDENTIFIER = 'SkyportEreignisFilterFlow::deliveryAddressId';
-    const KEY_OPERATOR = 'deliveryAddressIdOperator';
-    const KEY_IDS = 'deliveryAddressIds';
+    const IDENTIFIER = 'SkyportEreignisFilterFlow::billingAddressId';
+    const KEY_OPERATOR = 'billingAddressIdOperator';
+    const KEY_IDS = 'billingAddressIds';
 
     public function getIdentifier(): string
     {
@@ -22,17 +22,17 @@ class SkyportDeliveryAddressIdFilter extends PluginFlowFilterDefinition
 
     public function getName(): string
     {
-        return 'Skyport: Lieferadresse-ID';
+        return 'Skyport: Rechnungsadresse-ID';
     }
 
     public function getDescription(): string
     {
-        return 'Filtert Aufträge anhand der Lieferadress-ID.';
+        return 'Filtert Aufträge anhand der Rechnungsadress-ID.';
     }
 
     public function getAIDescription(): string
     {
-        return 'Filters orders by delivery address ID.';
+        return 'Filters orders by billing address ID.';
     }
 
     public function getOperators(): array
@@ -87,7 +87,7 @@ class SkyportDeliveryAddressIdFilter extends PluginFlowFilterDefinition
             TextAreaField::class,
             [
                 'name' => self::KEY_IDS,
-                'label' => 'Lieferadress-IDs'
+                'label' => 'Rechnungsadress-IDs'
             ]
         );
 
@@ -131,13 +131,13 @@ class SkyportDeliveryAddressIdFilter extends PluginFlowFilterDefinition
         }
 
         if (
-            !isset($order->deliveryAddress) ||
-            !isset($order->deliveryAddress->id)
+            !isset($order->billingAddress) ||
+            !isset($order->billingAddress->id)
         ) {
             return false;
         }
 
-        $addressId = (int)$order->deliveryAddress->id;
+        $addressId = (int)$order->billingAddress->id;
 
         if ($addressId <= 0) {
             return false;
