@@ -118,9 +118,7 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
                 [
                     'id',
                     'firstName',
-                    'lastName',
-                    'fullName',
-                    'email'
+                    'lastName'
                 ],
                 $page,
                 $itemsPerPage,
@@ -252,41 +250,23 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
         $id = isset($contact->id)
             ? (int)$contact->id
             : 0;
-
-        $name = '';
-
-        if (
-            isset($contact->fullName) &&
-            trim((string)$contact->fullName) !== ''
-        ) {
-            $name = trim((string)$contact->fullName);
-        }
-        else {
-            $firstName = isset($contact->firstName)
-                ? trim((string)$contact->firstName)
-                : '';
-
-            $lastName = isset($contact->lastName)
-                ? trim((string)$contact->lastName)
-                : '';
-
-            $name = trim($firstName . ' ' . $lastName);
-        }
-
-        $email = isset($contact->email)
-            ? trim((string)$contact->email)
+    
+        $firstName = isset($contact->firstName)
+            ? trim((string)$contact->firstName)
             : '';
-
+    
+        $lastName = isset($contact->lastName)
+            ? trim((string)$contact->lastName)
+            : '';
+    
+        $name = trim($firstName . ' ' . $lastName);
+    
         $label = (string)$id;
-
+    
         if ($name !== '') {
             $label .= ' - ' . $name;
         }
-
-        if ($email !== '') {
-            $label .= ' - ' . $email;
-        }
-
+    
         return $label;
     }
 }
