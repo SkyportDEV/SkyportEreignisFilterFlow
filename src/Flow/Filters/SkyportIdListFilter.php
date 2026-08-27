@@ -2,198 +2,303 @@
 
 namespace SkyportEreignisFilterFlow\Flow\Filters;
 
-use Plenty\Modules\Flow\Filters\Definitions\Contracts\FilterDefinitionContract;
+use Plenty\Modules\Flow\Contracts\UIConfigFormContract;
 use Plenty\Modules\Flow\DataModels\ConfigForm\SelectboxField;
-use Plenty\Modules\Flow\DataModels\ConfigForm\SelectboxValue;
 use Plenty\Modules\Flow\DataModels\ConfigForm\TextAreaField;
+use Plenty\Modules\Flow\Enums\FilterOperators;
+use Plenty\Modules\Flow\Filters\Definitions\Models\Plugin\PluginFlowFilterDefinition;
+use Plenty\Modules\Order\Contracts\OrderRepositoryContract;
 
-class SkyportIdListFilter extends FilterDefinitionContract
+class SkyportIdListFilter extends PluginFlowFilterDefinition
 {
+    const IDENTIFIER = 'SkyportEreignisFilterFlow::orderIdList';
+    const KEY_TYPE = 'idType';
+    const KEY_IDS = 'ids';
+
     public function getIdentifier(): string
     {
-        return 'skyport_id_list_filter';
+        return self::IDENTIFIER;
     }
 
     public function getName(): string
     {
-        // Wichtig: Suchbegriff "Kontakt" direkt im Namen
-        return 'Skyport: Kontakt/Adressen – ID Liste';
+        return 'Skyport Ereignis-Filter';
     }
 
     public function getDescription(): string
     {
-        return 'Filtert Orders nach Kontakt-ID (Empfänger) oder Rechnungs-/Lieferadresse per ID-Liste.';
+        return 'Filtert Aufträge nach Kontakt-ID, Rechnungsadress-ID oder Lieferadress-ID.';
     }
 
-    public function getUIConfigFields(): array
+    public function getAIDescription(): string
     {
-        $type = pluginApp(SelectboxField::class);
-        $type->name = 'type';
-        $type->caption = 'Typ';
-        $type->value = 'contact';
-        $type->selectBoxValues = [
-            $this->sbv('contact', 'Kontakt-ID (Empfänger)'),
-            $this->sbv('billing', 'ID der Rechnungsadresse'),
-            $this->sbv('delivery', 'ID der Lieferadresse'),
-        ];
-
-        $mode = pluginApp(SelectboxField::class);
-        $mode->name = 'mode';
-        $mode->caption = 'Modus';
-        $mode->value = 'allow';
-        $mode->selectBoxValues = [
-            $this->sbv('allow', 'Zulassen (Treffer = true)'),
-            $this->sbv('deny', 'Nicht zulassen (Treffer = false)'),
-        ];
-
-        $ids = pluginApp(TextAreaField::class);
-        $ids->name = 'ids';
-        $ids->caption = 'IDs (Komma oder Zeilenumbrüche – gemischt möglich)';
-        $ids->value = '';
-
-        return [
-            $type->toArray(),
-            $mode->toArray(),
-            $ids->toArray(),
-        ];
-    }
-
-    public function getRequiredInputTypes(): array
-    {
-        return ['order'];
+        return 'Filter orders by receiver contact ID, billing address ID or delivery address ID.';
     }
 
     public function getOperators(): array
     {
-        // konservativ leer lassen
-        return [];
+        return [
+            FilterOperators::IN,
+            FilterOperators::NOT_IN
+        ];
     }
 
-    public function getAvailabilities(): array
+    public function getUIConfigFields(): array
     {
-        // konservativ leer lassen (UI entscheidet)
-        return [];
+        /** @var UIConfigFormContract $configForm */
+        $configForm = pluginApp(
+            UIConfigFormContract::class,
+            [
+                'translationNamespace' => 'module_flow'
+            ]
+        );
+
+        /*
+         * Plenty fügt damit den Operator für KEY_IDS hinzu:
+         *
+         * IN     = Zulassen
+         * NOT_IN = Nicht zulassen
+         */
+        $configForm = $this->addOperators(
+            $configForm,
+            self::KEY_IDS
+        );
+
+        /*
+         * Typ der zu prüfenden ID
+         */
+        /** @var SelectboxField $typeField */
+        $typeField = $this->getFormField(
+            SelectboxField::class,
+            [
+                'name' => self::KEY_TYPE,
+                'label' => 'Typ'
+            ]
+        );
+
+        $typeField->addSelectboxValue(
+            'Kontakt-ID',
+            'contact',
+            false
+        );
+
+        $typeField->addSelectboxValue(
+            'ID der Rechnungsadresse',
+            'billing',
+            false
+        );
+
+        $typeField->addSelectboxValue(
+            'ID der Lieferadresse',
+            'delivery',
+            false
+        );
+
+        $configForm->addSelectboxField(
+            $typeField,
+            self::KEY_TYPE
+        );
+
+        /*
+         * ID-Liste
+         *
+         * Erlaubt:
+         * 123
+         * 456
+         *
+         * oder:
+         * 123,456
+         *
+         * oder gemischt.
+         */
+        /** @var TextAreaField $idsField */
+        $idsField = $this->getFormField(
+            TextAreaField::class,
+            [
+                'name' => self::KEY_IDS,
+                'label' => 'IDs'
+            ]
+        );
+
+        $idsField->helperText = [
+            'Eine ID pro Zeile oder durch Komma getrennt. Beide Varianten können gemischt werden.'
+        ];
+
+        $configForm->addTextAreaField(
+            $idsField,
+            self::KEY_IDS
+        );
+
+        return $configForm->getConfigFields();
     }
 
-    public function getCondition(): bool
-    {
-        return true;
-    }
+    public function performFilter(
+        array $inputs,
+        array $filterField,
+        array $extraParams = []
+    ): bool {
+        /*
+         * Wichtig:
+         * Flow liefert hier nicht das Order-Modell direkt.
+         *
+         * mapFilterFields() erzeugt:
+         *
+         * [
+         *     'ids' => [
+         *         'operator' => ...,
+         *         'value' => ...
+         *     ],
+         *     ...
+         * ]
+         */
+        $filterField = $this->mapFilterFields($filterField);
 
-    public function performFilter($inputs, $filterField, $extraParams = []): bool
-    {
-        $order = $this->extractOrder($inputs);
+        /*
+         * Order-ID aus dem Flow-Input holen.
+         *
+         * Genau dieses Muster verwendet auch das offizielle
+         * Plenty-Beispiel.
+         */
+        if (!isset($inputs[$this->getObjectType()])) {
+            return false;
+        }
+
+        $orderId = (int)$inputs[$this->getObjectType()]->value;
+
+        if ($orderId <= 0) {
+            return false;
+        }
+
+        /** @var OrderRepositoryContract $orderRepository */
+        $orderRepository = pluginApp(
+            OrderRepositoryContract::class
+        );
+
+        $order = $orderRepository->findById($orderId);
+
         if (!$order) {
             return false;
         }
 
-        $type = $this->getConfigValue($filterField, 'type', 'contact');
-        $mode = $this->getConfigValue($filterField, 'mode', 'allow');
-        $idsRaw = $this->getConfigValue($filterField, 'ids', '');
+        /*
+         * Konfiguration auslesen
+         */
+        if (
+            !isset($filterField[self::KEY_TYPE]) ||
+            !isset($filterField[self::KEY_TYPE]['value']) ||
+            !isset($filterField[self::KEY_IDS]) ||
+            !isset($filterField[self::KEY_IDS]['operator']) ||
+            !isset($filterField[self::KEY_IDS]['value'])
+        ) {
+            return false;
+        }
+
+        $type = (string)$filterField[self::KEY_TYPE]['value'];
+        $operator = $filterField[self::KEY_IDS]['operator'];
+        $idsRaw = (string)$filterField[self::KEY_IDS]['value'];
 
         $ids = $this->parseIds($idsRaw);
+
         if (count($ids) === 0) {
             return false;
         }
 
+        /*
+         * Tatsächliche ID des Auftrags ermitteln
+         */
         $value = 0;
 
         if ($type === 'contact') {
-            $value = isset($order->contactReceiverId) ? (int)$order->contactReceiverId : 0;
-        } elseif ($type === 'billing') {
-            $value = (isset($order->billingAddress) && isset($order->billingAddress->id))
-                ? (int)$order->billingAddress->id
-                : 0;
-        } elseif ($type === 'delivery') {
-            $value = (isset($order->deliveryAddress) && isset($order->deliveryAddress->id))
-                ? (int)$order->deliveryAddress->id
-                : 0;
+            if (isset($order->contactReceiverId)) {
+                $value = (int)$order->contactReceiverId;
+            }
         }
+        elseif ($type === 'billing') {
+            if (
+                isset($order->billingAddress) &&
+                isset($order->billingAddress->id)
+            ) {
+                $value = (int)$order->billingAddress->id;
+            }
+        }
+        elseif ($type === 'delivery') {
+            if (
+                isset($order->deliveryAddress) &&
+                isset($order->deliveryAddress->id)
+            ) {
+                $value = (int)$order->deliveryAddress->id;
+            }
+        }
+
+        /*
+         * Tatsächlichen Wert für den FlowTracker erfassen.
+         *
+         * Damit sollte später im Tracker sichtbar sein,
+         * welche ID Plenty tatsächlich geprüft hat.
+         */
+        $this->captureGiven(
+            self::KEY_IDS,
+            $value
+        );
 
         if ($value <= 0) {
             return false;
         }
 
-        $inList = in_array($value, $ids, true);
+        $inList = in_array(
+            $value,
+            $ids,
+            true
+        );
 
-        if ($mode === 'deny') {
+        if ($operator === FilterOperators::IN) {
+            return $inList;
+        }
+
+        if ($operator === FilterOperators::NOT_IN) {
             return !$inList;
         }
 
-        return $inList;
-    }
-
-    private function sbv(string $value, string $caption): array
-    {
-        $o = pluginApp(SelectboxValue::class);
-        $o->value = $value;
-        $o->caption = $caption;
-        $o->translateCaption = false;
-        return $o->toArray();
-    }
-
-    private function extractOrder($inputs)
-    {
-        if (is_array($inputs) && isset($inputs['order'])) {
-            return $inputs['order'];
-        }
-
-        if (is_array($inputs)) {
-            foreach ($inputs as $v) {
-                if (is_object($v)) {
-                    return $v;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private function getConfigValue($filterField, string $key, string $default): string
-    {
-        if (is_array($filterField)) {
-            if (isset($filterField['configFields']) && is_array($filterField['configFields']) && isset($filterField['configFields'][$key])) {
-                return (string)$filterField['configFields'][$key];
-            }
-
-            if (isset($filterField['config']) && is_array($filterField['config']) && isset($filterField['config'][$key])) {
-                return (string)$filterField['config'][$key];
-            }
-
-            if (isset($filterField[$key])) {
-                return (string)$filterField[$key];
-            }
-        }
-
-        return $default;
+        return false;
     }
 
     private function parseIds(string $input): array
     {
-        $input = str_replace(["\r\n", "\r", "\n"], ",", $input);
+        /*
+         * Windows / Unix / Mac Zeilenumbrüche zu Komma
+         */
+        $input = str_replace(
+            [
+                "\r\n",
+                "\r",
+                "\n"
+            ],
+            ',',
+            $input
+        );
 
-        $out = [];
-        foreach (explode(",", $input) as $part) {
+        $ids = [];
+        $seen = [];
+
+        foreach (explode(',', $input) as $part) {
             $part = trim($part);
+
             if ($part === '') {
                 continue;
             }
 
             $id = (int)$part;
-            if ($id > 0) {
-                $out[] = $id;
-            }
-        }
 
-        $unique = [];
-        $seen = [];
-        foreach ($out as $id) {
+            if ($id <= 0) {
+                continue;
+            }
+
             if (!isset($seen[$id])) {
-                $seen[$id] = 1;
-                $unique[] = $id;
+                $seen[$id] = true;
+                $ids[] = $id;
             }
         }
 
-        return $unique;
+        return $ids;
     }
 }
