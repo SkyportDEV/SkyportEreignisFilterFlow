@@ -36,7 +36,8 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
     public function getOperators(): array
     {
         return [
-            FilterOperators::EQUAL
+            FilterOperators::EQUAL,
+            FilterOperators::NOT_EQUAL
         ];
     }
 
@@ -120,6 +121,12 @@ class SkyportContactIdFilter extends PluginFlowFilterDefinition
         if ($operator === FilterOperators::EQUAL) {
             return $contactId === $configuredId;
         }
+        
+        if ($operator === FilterOperators::NOT_EQUAL) {
+            return $contactId !== $configuredId;
+        }
+        
+        return false;
 
         return false;
     }
